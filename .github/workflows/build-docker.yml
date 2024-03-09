@@ -5,7 +5,7 @@ on:
     - cron: '5 4 * * 0' # Repack dependency every week to pull updates
   push:
     branches:
-      - main
+      - master
 
 jobs:
   build-docker:
