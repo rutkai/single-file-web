@@ -1,59 +1,50 @@
-const http = require('http');
-const qs = require('querystring');
-const api = require('single-file-cli/single-file-cli-api');
-const backend = require('single-file-cli/back-ends/puppeteer');
+import * as qs from 'node:querystring';
+import * as child_process from "node:child_process";
+import * as url from "node:url";
 
-const options = Object.assign({}, api.DEFAULT_OPTIONS, {
-    'browserHeadless': true,
-    'browserWidth': 1280,
-    'browserHeight': 720,
-    'browserExecutablePath': '/usr/bin/chromium-browser',
-    'browserArgs': '["--no-sandbox"]',
+
+Deno.addSignalListener("SIGINT", () => {
+    console.log("Exiting...");
+    Deno.exit();
 });
 
-const server = http.createServer((req, res) => {
-    if (req.method === 'POST') {
-        var body = '';
+Deno.serve({ port: 3000 }, async request => {
+    if (request.method === 'POST') {
+        const post = qs.parse(await request.text());
 
-        req.on('data', data => {
-            body += data;
-        });
+        if (post['url'] && isValidUrl(post['url'])) {
+            try {
+                const result = child_process.execSync(`/usr/bin/deno -q run --allow-read --allow-write --allow-net --allow-env --allow-run ./single-file --browser-executable-path /usr/bin/chromium --output-directory ./../out/ --dump-content ${post['url']}`);
 
-        req.on('end', () => {
-            const post = qs.parse(body);
-
-            if (post['url'] && api.VALID_URL_TEST.test(post['url'])) {
-                backend.getPageData({
-                    'url': post['url'],
-                })
-                    .then(pageData => {
-                        res.writeHead(200, {'Content-Type': 'text/html'});
-                        res.write(pageData.content);
-                        res.end();
-
-                        return backend.closeBrowser();
-                    });
-            } else {
-                res.writeHead(400, {'Content-Type': 'text/plain'});
-                res.write('Missing or invalid parameter: url');
-                res.end();
+                return new Response(result, {
+                    headers: { 'Content-Type': 'text/html' },
+                });
+            } catch (err) {
+                return new Response(err.message, {
+                    status: 500,
+                    headers: { 'Content-Type': 'text/plain' },
+                });
             }
+        }
+
+        return new Response('Missing or invalid parameter: url', {
+            status: 400,
+            headers: { 'Content-Type': 'text/plain' },
         });
-    } else {
-        res.writeHead(400, {'Content-Type': 'text/plain'});
-        res.write('POST request expected.');
-        res.end();
     }
-});
 
-process.on('SIGINT', () => {
-    server.close(() => {
-        console.log('Server stopped.');
+    return new Response('POST request expected.', {
+        status: 400,
+        headers: { 'Content-Type': 'text/plain' },
     });
 });
 
-backend.initialize(options)
-    .then(() => {
-        server.listen(3000);
-        console.log('Server running at port 3000');
-    });
+
+const isValidUrl = (s) => {
+    try {
+        new url.URL(s);
+        return true;
+    } catch (err) {
+        return false;
+    }
+}
